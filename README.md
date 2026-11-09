@@ -46,6 +46,10 @@ Navigating large university campuses and tracking daily transit schedules often 
 - **Node.js & Express.js:** RESTful API server handling client requests, transit data ingestion, and routing logic.
 - **PostgreSQL & PostGIS:** Relational database storage powering spatial queries, user authentication, and schema integrity.
 
+<img width="2698" height="674" alt="image" src="https://github.com/user-attachments/assets/eeb475a1-f376-4303-98d2-0005949e7269" />
+
+<img width="1331" height="1031" alt="image" src="https://github.com/user-attachments/assets/69b93e3a-5165-441c-ad86-282da061b8b2" />
+
 ---
 
 ## ⚙️ Key Technical Features
@@ -61,10 +65,6 @@ Navigating large university campuses and tracking daily transit schedules often 
 3. **Data Ingestion & In-Transit Logic**
    - Endpoints designed using Express.js to parse and update route telemetry in real time.
    - Robust error handling and validation pipelines to prevent data inconsistency.
-
-<img width="2698" height="674" alt="image" src="https://github.com/user-attachments/assets/eeb475a1-f376-4303-98d2-0005949e7269" />
-
-<img width="1331" height="1031" alt="image" src="https://github.com/user-attachments/assets/69b93e3a-5165-441c-ad86-282da061b8b2" />
 
 ---
 
