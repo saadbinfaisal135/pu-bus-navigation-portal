@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Location {
+  id        String       @id @default(uuid())
+  name      String
+  type      LocationType
+  lat       Float
+  lng       Float
+  info      String
+  address   String
+  image     String
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@map("location")
+}
+
+model Route {
+  id        String       @id @default(uuid())
+  name      String
+  desc      String
+  color     String
+  createdAt DateTime     @default(now()) @map("created_at")
+  buses     Bus[]
+  batches   RouteBatch[]
+  waypoints Waypoint[]
+
+  @@map("routes")
+}
+
+model Waypoint {
+  id      String @id @default(uuid())
+  name    String
+  lat     Float
+  lng     Float
+  routeId String @map("route_id")
+  route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("waypoints")
+}
+
+model RouteBatch {
+  id      String    @id @default(uuid())
+  batch   BatchType
+  routeId String    @map("route_id")
+  route   Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("route_batches")
+}
+
+model Bus {
+  id          String    @id @default(uuid())
+  busNumber   String    @unique @map("bus_number")
+  status      BusStatus @default(ACTIVE)
+  routeId     String?   @map("route_id")
+  lat         Float?
+  lng         Float?
+  lastUpdated DateTime  @default(now()) @updatedAt @map("last_updated")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  route       Route?    @relation(fields: [routeId], references: [id])
+
+  @@map("buses")
+}
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  password    String
+  firstName   String    @map("first_name")
+  lastName    String    @map("last_name")
+  phoneNumber String    @map("phone_number")
+  isVerified  Boolean   @default(false) @map("is_verified")
+  otp         String?
+  otpExpires  DateTime? @map("otp_expires")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum LocationType {
+  CAMPUS
+  HOSTEL
+  GROUND
+  GATE
+}
+
+enum BusStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum BatchType {
+  MORNING
+  AFTERNOON
+  EVENING
+}
