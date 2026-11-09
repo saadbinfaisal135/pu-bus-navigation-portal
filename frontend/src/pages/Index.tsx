@@ -1,0 +1,392 @@
+import React, { useState, useCallback, useEffect } from "react";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { Navbar } from "@/components/Navbar";
+import { Sidebar } from "@/components/Sidebar";
+import { MapContainer } from "@/components/MapContainer";
+import { MapControls } from "@/components/MapControls";
+import { MenuSidebar } from "@/components/MenuSidebar";
+import { Footer } from "@/components/Footer";
+import { LoginModal } from "@/components/LoginModal";
+import { LocationSidebar } from "@/components/LocationSidebar";
+import { Location, Route } from "@/data/routeData";
+import { useOperatingStatus } from "@/hooks/useOperatingStatus";
+import { useGeolocation, getDistance } from "@/hooks/useGeolocation";
+import { useToast } from "@/hooks/use-toast";
+import apiService from "@/services/index";
+
+const Index = () => {
+  const [isLoading, setIsLoading] = useState(() => {
+    return !sessionStorage.getItem("hasLoaded");
+  });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [showDirectionsTo, setShowDirectionsTo] = useState<Location | null>(null);
+  const [pendingDirections, setPendingDirections] = useState<Location | null>(null);
+  const [activeRouteId, setActiveRouteId] = useState<number | string | null>(
+    null,
+  );
+  const [showAllRoutes, setShowAllRoutes] = useState(false);
+  const [visibleLocations, setVisibleLocations] = useState<Location[]>([]);
+  const [locationType, setLocationType] = useState<
+    "campuses" | "hostels" | "grounds" | "gates" | null
+  >(null);
+  const [selectedMarker, setSelectedMarker] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [radiusCircle, setRadiusCircle] = useState<{
+    center: { lat: number; lng: number };
+    radius: number;
+  } | null>(null);
+  const [choosingOnMap, setChoosingOnMap] = useState(false);
+  const [apiHostels, setApiHostels] = useState<Location[]>([]);
+  const [apiCampuses, setApiCampuses] = useState<Location[]>([]);
+  const [apiGrounds, setApiGrounds] = useState<Location[]>([]);
+  const [apiGates, setApiGates] = useState<Location[]>([]);
+  const [apiRoutes, setApiRoutes] = useState<Route[]>([]);
+  const [apiLiveBuses, setApiLiveBuses] = useState<Route[]>([]);
+
+  const {
+    position: userLocation,
+    isLoading: isLocating,
+    getLocation,
+    clearLocation,
+  } = useGeolocation();
+  const operatingStatus = useOperatingStatus();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    console.log("Live Buses are here ===>>", apiLiveBuses);
+    const fetchAllLocations = async () => {
+      try {
+        const results = await Promise.allSettled([
+          apiService.getHostels(),
+          apiService.getCampuses(),
+          apiService.getGrounds(),
+          apiService.getGates(),
+          apiService.getRoutes(),
+          apiService.getLiveBuses(),
+        ]);
+
+        const [
+          hostelsRes,
+          campusesRes,
+          groundsRes,
+          gatesRes,
+          routesRes,
+          liveBusesRes,
+        ] = results;
+
+        // Helper to extract array from standard API response structure
+        const extractArray = (res: any) =>
+          res && res.status === "fulfilled" && res.value && Array.isArray(res.value.data)
+            ? res.value.data
+            : res && res.status === "fulfilled" && Array.isArray(res.value)
+              ? res.value
+              : [];
+
+        setApiHostels(extractArray(hostelsRes));
+        setApiCampuses(extractArray(campusesRes));
+        setApiGrounds(extractArray(groundsRes));
+        setApiGates(extractArray(gatesRes));
+        setApiLiveBuses(extractArray(liveBusesRes));
+
+        if (routesRes.status === "fulfilled" && routesRes.value) {
+          const routesData = routesRes.value;
+          if (Array.isArray(routesData)) {
+            setApiRoutes(routesData);
+          } else if (routesData && typeof routesData === "object") {
+            const dataObj = (routesData as any).data;
+            const possibleRoutes =
+              dataObj && Array.isArray(dataObj.routes)
+                ? dataObj.routes
+                : Array.isArray(dataObj)
+                  ? dataObj
+                  : (routesData as any).routes || [];
+
+            if (Array.isArray(possibleRoutes) && possibleRoutes.length > 0) {
+              setApiRoutes(possibleRoutes);
+            } else {
+              console.warn(
+                "Could not find routes array in object response:",
+                routesData,
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch locations:", error);
+      }
+    };
+    fetchAllLocations();
+  }, []);
+
+
+  const handleLocateMe = useCallback(() => {
+    if (userLocation) {
+      clearLocation();
+      setRadiusCircle(null);
+    } else {
+      getLocation();
+    }
+  }, [userLocation, clearLocation, getLocation]);
+
+  const handleRouteToggle = useCallback((routeId: number | string) => {
+    setShowAllRoutes(false);
+    setActiveRouteId((prev) => (prev === routeId ? null : routeId));
+  }, []);
+
+  const handleShowLocations = useCallback(
+    (type: "campuses" | "hostels" | "grounds" | "gates") => {
+      const locationMap = {
+        campuses: apiCampuses,
+        hostels: apiHostels,
+        grounds: apiGrounds,
+        gates: apiGates,
+      };
+      setVisibleLocations(locationMap[type]);
+      setLocationType(type);
+      setActiveRouteId(null);
+      setShowAllRoutes(false);
+    },
+    [apiHostels, apiCampuses, apiGrounds, apiGates],
+  );
+
+  const handleShowAllRoutes = useCallback(() => {
+    setShowAllRoutes(true);
+    setActiveRouteId(null);
+    setVisibleLocations([]);
+    setLocationType(null);
+  }, []);
+
+  const handleMapClick = useCallback(
+    (lat: number, lng: number) => {
+      if (choosingOnMap) {
+        setSelectedMarker({ lat, lng });
+      } else {
+        setActiveRouteId(null);
+        setVisibleLocations([]);
+        setLocationType(null);
+      }
+    },
+    [choosingOnMap],
+  );
+
+  const handleSearchSelect = useCallback(
+    (lat: number, lng: number, _address: string) => {
+      setSelectedMarker({ lat, lng });
+    },
+    [],
+  );
+
+  const handleAddRadius = useCallback(
+    (type: "current" | "marker", radius: number) => {
+      const center = type === "current" ? userLocation : selectedMarker;
+      if (center) {
+        setRadiusCircle({ center, radius });
+      } else {
+        toast({
+          title: "Error",
+          description:
+            type === "current"
+              ? "Please enable location first"
+              : "Please select a marker first",
+        });
+      }
+    },
+    [userLocation, selectedMarker, toast],
+  );
+
+  const handleFindClosestRoute = useCallback(() => {
+    const ref = userLocation || selectedMarker;
+    if (!ref) {
+      toast({
+        title: "Location Required",
+        description: "Enable location or select a point on map",
+      });
+      return;
+    }
+
+    let closestRoute = null;
+    let minDist = Infinity;
+    apiRoutes.forEach((route) => {
+      route.waypoints.forEach((wp) => {
+        const dist = getDistance(ref.lat, ref.lng, wp.lat, wp.lng);
+        if (dist < minDist) {
+          minDist = dist;
+          closestRoute = route;
+        }
+      });
+    });
+
+    if (closestRoute) {
+      setActiveRouteId((closestRoute as any).id);
+      setShowAllRoutes(false);
+    }
+  }, [userLocation, selectedMarker, toast, apiRoutes]);
+
+  // Handle query parameters for cross-page navigation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const show = params.get('show');
+    const locate = params.get('locate');
+
+    if (show) {
+      setTimeout(() => {
+        if (show === 'allRoutes') {
+          handleShowAllRoutes();
+        } else if (['campuses', 'hostels', 'grounds', 'gates'].includes(show)) {
+          handleShowLocations(show as any);
+        }
+      }, 500); // Small delay to ensure data is loaded
+    }
+
+    if (locate === 'true') {
+      setTimeout(() => {
+        handleLocateMe();
+      }, 1000);
+    }
+
+    // Clean up URL without refreshing
+    if (show || locate) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [apiCampuses, apiHostels, apiGrounds, apiGates, handleShowLocations, handleShowAllRoutes, handleLocateMe]);
+
+  const handleToggleChooseOnMap = useCallback(() => {
+    if (selectedMarker) {
+      setSelectedMarker(null);
+      setChoosingOnMap(false);
+    } else {
+      setChoosingOnMap((prev) => !prev);
+      if (!choosingOnMap) {
+        toast({
+          title: "Choose on Map",
+          description: "Click on the map to place a marker",
+        });
+      }
+    }
+  }, [selectedMarker, choosingOnMap, toast]);
+
+  const handleLocationSelect = useCallback((location: Location) => {
+    setSelectedLocation(location);
+    setShowDirectionsTo(null); // Clear previous directions when new location selected
+  }, []);
+
+  const handleGetDirections = useCallback((location: Location) => {
+    if (userLocation) {
+      setShowDirectionsTo(location);
+    } else {
+      setPendingDirections(location);
+      getLocation();
+      toast({
+        title: "Requesting Location",
+        description: "Please allow location access to see directions.",
+      });
+    }
+  }, [userLocation, getLocation, toast]);
+
+  // Effect to handle directions after location is granted
+  useEffect(() => {
+    if (userLocation && pendingDirections) {
+      setShowDirectionsTo(pendingDirections);
+      setPendingDirections(null);
+    }
+  }, [userLocation, pendingDirections]);
+
+  if (isLoading) {
+    return (
+      <LoadingScreen 
+        onComplete={() => {
+          sessionStorage.setItem("hasLoaded", "true");
+          setIsLoading(false);
+        }} 
+      />
+    );
+  }
+
+  const activeRoute = apiRoutes.find((r) => r.id === activeRouteId) || null;
+
+  return (
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
+      <Navbar
+        onLocateMe={handleLocateMe}
+        isLocating={isLocating}
+        hasLocation={!!userLocation}
+        onShowCampuses={() => handleShowLocations("campuses")}
+        onShowHostels={() => handleShowLocations("hostels")}
+        onShowGrounds={() => handleShowLocations("grounds")}
+        onShowGates={() => handleShowLocations("gates")}
+        onShowAllRoutes={handleShowAllRoutes}
+        onMenuToggle={() => setMenuOpen(true)}
+        onLoginClick={() => setLoginModalOpen(true)}
+      />
+
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        <MenuSidebar
+          isOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onShowCampuses={() => handleShowLocations("campuses")}
+          onShowHostels={() => handleShowLocations("hostels")}
+          onShowGrounds={() => handleShowLocations("grounds")}
+          onShowGates={() => handleShowLocations("gates")}
+          onShowAllRoutes={handleShowAllRoutes}
+        />
+
+        <Sidebar
+          routes={apiRoutes}
+          activeRouteId={activeRouteId}
+          onRouteToggle={handleRouteToggle}
+          userLocation={userLocation}
+          onSearchSelect={handleSearchSelect}
+          operatingStatus={operatingStatus}
+        />
+
+        <div className="flex-1 relative">
+          <MapControls
+            onAddRadius={handleAddRadius}
+            onClearRadius={() => setRadiusCircle(null)}
+            onFindClosestRoute={handleFindClosestRoute}
+            onToggleChooseOnMap={handleToggleChooseOnMap}
+            choosingOnMap={choosingOnMap}
+            hasSelectedMarker={!!selectedMarker}
+            hasUserLocation={!!userLocation}
+          />
+
+          <MapContainer
+            userLocation={userLocation}
+            selectedMarker={selectedMarker}
+            onMapClick={handleMapClick}
+            activeRoute={activeRoute}
+            visibleLocations={visibleLocations}
+            locationType={locationType}
+            radiusCircle={radiusCircle}
+            choosingOnMap={choosingOnMap}
+            showAllRoutes={showAllRoutes}
+            onLocationSelect={handleLocationSelect}
+            allRoutes={apiRoutes}
+            showDirectionsTo={showDirectionsTo}
+          />
+
+          <LocationSidebar 
+            location={selectedLocation} 
+            userLocation={userLocation}
+            onClose={() => {
+              setSelectedLocation(null);
+              setShowDirectionsTo(null);
+            }} 
+            onGetDirections={handleGetDirections}
+            isActiveRoute={!!selectedLocation && !!showDirectionsTo && selectedLocation.lat === showDirectionsTo.lat && selectedLocation.lng === showDirectionsTo.lng}
+          />
+        </div>
+      </div>
+
+      <Footer />
+
+      <LoginModal isOpen={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+    </div>
+  );
+};
+
+export default Index;
